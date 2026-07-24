@@ -16,8 +16,7 @@ export const createInvoicePDF = (order: any, invoiceNumber: string): Promise<Buf
       const fontPathRegular = path.join(__dirname, "fonts", "NotoSansBengali-Regular.ttf");
       const fontPathBold = path.join(__dirname, "fonts", "NotoSansBengali-Bold.ttf");
 
-      doc.registerFont("NotoSans", fontPathRegular);
-      doc.registerFont("NotoSans-Bold", fontPathBold);
+      // Fonts are mapped to standard Helvetica to avoid corrupt font file errors
 
       const buffers: Buffer[] = [];
       doc.on("data", (chunk) => buffers.push(chunk));
@@ -32,28 +31,28 @@ export const createInvoicePDF = (order: any, invoiceNumber: string): Promise<Buf
       // Brand Title
       doc.fillColor("#0f172a")
          .fontSize(28)
-         .font("NotoSans-Bold")
+         .font("Helvetica-Bold")
          .text("LUXE", 50, 55);
       
       doc.fillColor("#64748b")
          .fontSize(8.5)
-         .font("NotoSans")
+         .font("Helvetica")
          .text("Aura Marketplace & Luxury Goods", 50, 85);
 
       doc.fillColor("#94a3b8")
          .fontSize(8)
-         .font("NotoSans")
+         .font("Helvetica")
          .text("Aura Plaza, Suite 101, Dhaka, BD | support@luxe.com", 50, 98);
 
       // Invoice metadata (Right aligned)
       doc.fillColor("#4f46e5")
          .fontSize(22)
-         .font("NotoSans-Bold")
+         .font("Helvetica-Bold")
          .text("INVOICE", 350, 55, { align: "right", width: 195 });
 
       doc.fillColor("#475569")
          .fontSize(9)
-         .font("NotoSans");
+         .font("Helvetica");
       
       doc.text(`Invoice No: ${invoiceNumber}`, 350, 81, { align: "right", width: 195 });
       doc.text(`Order Ref: ${order.orderId}`, 350, 95, { align: "right", width: 195 });
@@ -88,12 +87,12 @@ export const createInvoicePDF = (order: any, invoiceNumber: string): Promise<Buf
       // Billed To Text
       doc.fillColor("#0f172a")
          .fontSize(9.5)
-         .font("NotoSans-Bold")
+         .font("Helvetica-Bold")
          .text("Billed To:", 62, 150);
 
       doc.fillColor("#475569")
          .fontSize(8.5)
-         .font("NotoSans")
+         .font("Helvetica")
          .text(`Name: ${order.customerName}`, 62, 166, { width: 211, ellipsis: true })
          .text(`Email: ${order.customerEmail}`, 62, 180, { width: 211, ellipsis: true });
       if (order.phone) {
@@ -103,12 +102,12 @@ export const createInvoicePDF = (order: any, invoiceNumber: string): Promise<Buf
       // Delivery Address Text
       doc.fillColor("#0f172a")
          .fontSize(9.5)
-         .font("NotoSans-Bold")
+         .font("Helvetica-Bold")
          .text("Delivery Address:", 322, 150);
 
       doc.fillColor("#475569")
          .fontSize(8.5)
-         .font("NotoSans");
+         .font("Helvetica");
 
       if (order.addressLine1) {
         doc.text(order.addressLine1, 322, 166, { width: 211, ellipsis: true });
@@ -136,7 +135,7 @@ export const createInvoicePDF = (order: any, invoiceNumber: string): Promise<Buf
       // Titles
       doc.fillColor("#64748b")
          .fontSize(7.5)
-         .font("NotoSans-Bold")
+         .font("Helvetica-Bold")
          .text("PAYMENT METHOD", 62, 250)
          .text("PAYMENT STATUS", 220, 250)
          .text("TRANSACTION REFERENCE ID", 350, 250);
@@ -150,7 +149,7 @@ export const createInvoicePDF = (order: any, invoiceNumber: string): Promise<Buf
 
       doc.fillColor("#1e293b")
          .fontSize(8.5)
-         .font("NotoSans")
+         .font("Helvetica")
          .text(displayMethod, 62, 264);
 
       // Status value (Color Coded Badge)
@@ -167,7 +166,7 @@ export const createInvoicePDF = (order: any, invoiceNumber: string): Promise<Buf
 
       doc.fillColor(badgeText)
          .fontSize(7.5)
-         .font("NotoSans-Bold")
+         .font("Helvetica-Bold")
          .text(pStatus.toUpperCase(), 220, 263, { width: 60, align: "center" });
 
       // Transaction ID value
@@ -179,7 +178,7 @@ export const createInvoicePDF = (order: any, invoiceNumber: string): Promise<Buf
 
       doc.fillColor("#1e293b")
          .fontSize(8)
-         .font("NotoSans")
+         .font("Helvetica")
          .text(txnId, 350, 264, { width: 183, ellipsis: true });
 
       // 5. Line items table
@@ -193,7 +192,7 @@ export const createInvoicePDF = (order: any, invoiceNumber: string): Promise<Buf
       // Table Header Text
       doc.fillColor("#ffffff")
          .fontSize(8.5)
-         .font("NotoSans-Bold");
+         .font("Helvetica-Bold");
       
       doc.text("Item Details", 62, tableTop + 7);
       doc.text("Qty", 335, tableTop + 7, { width: 35, align: "right" });
@@ -204,13 +203,13 @@ export const createInvoicePDF = (order: any, invoiceNumber: string): Promise<Buf
       const items = (order.items as any[]) || [];
 
       const formatCurrency = (val: number) => {
-        return `৳${Number(val).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+        return `Tk ${Number(val).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
       };
 
       if (items.length === 0) {
         doc.fillColor("#1e293b")
            .fontSize(9)
-           .font("NotoSans")
+           .font("Helvetica")
            .text("Order Package / Aura Premium Purchase", 62, y, { width: 260 });
         
         doc.text("1", 335, y, { width: 35, align: "right" });
@@ -227,7 +226,7 @@ export const createInvoicePDF = (order: any, invoiceNumber: string): Promise<Buf
         items.forEach((item: any) => {
           doc.fillColor("#1e293b")
              .fontSize(9)
-             .font("NotoSans-Bold");
+             .font("Helvetica-Bold");
           
           doc.text(item.name || "Product Item", 62, y, { width: 260 });
           
@@ -236,7 +235,7 @@ export const createInvoicePDF = (order: any, invoiceNumber: string): Promise<Buf
             y += 12;
             doc.fillColor("#64748b")
                .fontSize(8)
-               .font("NotoSans")
+               .font("Helvetica")
                .text(item.specsText, 62, y, { width: 260 });
             specsHeight = 10;
           }
@@ -245,14 +244,14 @@ export const createInvoicePDF = (order: any, invoiceNumber: string): Promise<Buf
 
           doc.fillColor("#334155")
              .fontSize(9)
-             .font("NotoSans");
+             .font("Helvetica");
 
           doc.text(String(item.quantity || item.qty || 1), 335, valY, { width: 35, align: "right" });
           doc.text(formatCurrency(Number(item.price || 0)), 385, valY, { width: 75, align: "right" });
           
           const rowTotal = Number(item.price || 0) * Number(item.quantity || item.qty || 1);
           doc.fillColor("#0f172a")
-             .font("NotoSans-Bold")
+             .font("Helvetica-Bold")
              .text(formatCurrency(rowTotal), 465, valY, { width: 70, align: "right" });
 
           y += 24 + specsHeight;
@@ -279,7 +278,7 @@ export const createInvoicePDF = (order: any, invoiceNumber: string): Promise<Buf
       // Pricing labels and values
       doc.fontSize(9)
          .fillColor("#475569")
-         .font("NotoSans");
+         .font("Helvetica");
       
       doc.text("Subtotal:", 335, y);
       doc.text(formatCurrency(calculatedSubtotal), 465, y, { width: 70, align: "right" });
@@ -307,7 +306,7 @@ export const createInvoicePDF = (order: any, invoiceNumber: string): Promise<Buf
 
       doc.fillColor("#1e3a8a")
          .fontSize(11)
-         .font("NotoSans-Bold")
+         .font("Helvetica-Bold")
          .text("Grand Total:", 335, y);
       doc.text(formatCurrency(Number(order.total)), 455, y, { width: 80, align: "right" });
 
@@ -319,7 +318,7 @@ export const createInvoicePDF = (order: any, invoiceNumber: string): Promise<Buf
          .stroke();
 
       doc.fontSize(8)
-         .font("NotoSans")
+         .font("Helvetica")
          .fillColor("#94a3b8")
          .text("Thank you for your purchase with LUXE! Please verify all items on delivery.", 50, 730, { align: "center", width: 495 });
 
