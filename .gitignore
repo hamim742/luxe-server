@@ -1,7 +1,7 @@
 node_modules
-.env
 *.log
 *.md
 /dist
 /src/generated/prisma
 .vercel
+config.bat
