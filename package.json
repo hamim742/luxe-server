@@ -4,9 +4,9 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "dev": "tsx watch src/server.ts",
-    "build": "prisma generate && tsc",
-    "start": "node dist/server.js",
+    "dev": "node init && tsx watch src/server.ts",
+    "build": "node init && prisma generate && tsc",
+    "start": "node init && node dist/server.js",
     "db:seed": "tsx src/app/db/seed.ts",
     "postinstall": "prisma generate",
     "test": "echo \"Error: no test specified\" && exit 1"
@@ -31,6 +31,7 @@
     "jsonwebtoken": "^9.0.3",
     "mongodb": "^7.4.0",
     "morgan": "^1.11.0",
+    "node-fetch": "^3.3.2",
     "nodemailer": "^9.0.3",
     "pdfkit": "^0.19.1",
     "pg": "^8.22.0",
