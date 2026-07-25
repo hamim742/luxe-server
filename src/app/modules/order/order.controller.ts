@@ -503,10 +503,290 @@ const downloadInvoice = catchAsync(async (req: Request, res: Response): Promise<
   res.send(pdfBuffer);
 });
 
+const getDashboardStats = catchAsync(async (req: Request, res: Response): Promise<void> => {
+  const now = new Date();
+  
+  // Start of today (midnight)
+  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const yesterdayStart = new Date(todayStart.getTime() - 24 * 60 * 60 * 1000);
+  
+  const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+  const fourteenDaysAgo = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000);
+  
+  const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+  const sixtyDaysAgo = new Date(now.getTime() - 60 * 24 * 60 * 60 * 1000);
+
+  // Helper function to calculate stats for a period
+  const getPeriodStats = async (start: Date, end: Date, prevStart: Date, prevEnd: Date) => {
+    // 1. Revenue
+    const periodOrders = await prisma.order.findMany({
+      where: {
+        createdAt: { gte: start, lt: end },
+        NOT: { fulfillmentStatus: { in: ["Canceled", "Cancelled"] } }
+      },
+      select: { total: true }
+    });
+    const totalRevenue = periodOrders.reduce((sum, o) => sum + o.total, 0);
+
+    const prevOrders = await prisma.order.findMany({
+      where: {
+        createdAt: { gte: prevStart, lt: prevEnd },
+        NOT: { fulfillmentStatus: { in: ["Canceled", "Cancelled"] } }
+      },
+      select: { total: true }
+    });
+    const prevRevenue = prevOrders.reduce((sum, o) => sum + o.total, 0);
+    const revenueGrowth = prevRevenue === 0 ? (totalRevenue > 0 ? 100 : 0) : ((totalRevenue - prevRevenue) / prevRevenue) * 100;
+
+    // 2. Orders
+    const totalOrders = await prisma.order.count({
+      where: { createdAt: { gte: start, lt: end } }
+    });
+    const prevOrdersCount = await prisma.order.count({
+      where: { createdAt: { gte: prevStart, lt: prevEnd } }
+    });
+    const ordersGrowth = prevOrdersCount === 0 ? (totalOrders > 0 ? 100 : 0) : ((totalOrders - prevOrdersCount) / prevOrdersCount) * 100;
+
+    // 3. Active products count (snapshot is always current total, growth is based on period additions)
+    const activeProducts = await prisma.product.count({
+      where: { status: "Published" }
+    });
+    const periodProductsCount = await prisma.product.count({
+      where: { createdAt: { gte: start, lt: end }, status: "Published" }
+    });
+    const prevPeriodProductsCount = await prisma.product.count({
+      where: { createdAt: { gte: prevStart, lt: prevEnd }, status: "Published" }
+    });
+    const productsGrowth = prevPeriodProductsCount === 0 ? (periodProductsCount > 0 ? 100 : 0) : ((periodProductsCount - prevPeriodProductsCount) / prevPeriodProductsCount) * 100;
+
+    // 4. Users (snapshot is always current total, growth is based on period additions)
+    const registeredUsers = await prisma.user.count();
+    const periodUsersCount = await prisma.user.count({
+      where: { createdAt: { gte: start, lt: end } }
+    });
+    const prevPeriodUsersCount = await prisma.user.count({
+      where: { createdAt: { gte: prevStart, lt: prevEnd } }
+    });
+    const usersGrowth = prevPeriodUsersCount === 0 ? (periodUsersCount > 0 ? 100 : 0) : ((periodUsersCount - prevPeriodUsersCount) / prevPeriodUsersCount) * 100;
+
+    return {
+      totalRevenue,
+      revenueGrowth,
+      totalOrders,
+      ordersGrowth,
+      activeProducts,
+      productsGrowth,
+      registeredUsers,
+      usersGrowth
+    };
+  };
+
+  const todayStats = await getPeriodStats(todayStart, now, yesterdayStart, todayStart);
+  const sevenDaysStats = await getPeriodStats(sevenDaysAgo, now, fourteenDaysAgo, sevenDaysAgo);
+  const thirtyDaysStats = await getPeriodStats(thirtyDaysAgo, now, sixtyDaysAgo, thirtyDaysAgo);
+
+  // All non-cancelled orders for top products / chart calculations
+  const allOrdersList = await prisma.order.findMany({
+    where: {
+      NOT: {
+        fulfillmentStatus: { in: ["Canceled", "Cancelled"] }
+      }
+    }
+  });
+
+  // Daily average revenue over the last 30 days
+  const dailyAverage = thirtyDaysStats.totalRevenue / 30;
+
+  // Recent 5 orders
+  const recentOrders = await prisma.order.findMany({
+    orderBy: { createdAt: "desc" },
+    take: 5
+  });
+
+  // Top products calculation based on sales quantity (all time)
+  const productSalesMap: Record<string, { quantity: number; totalSales: number }> = {};
+  
+  allOrdersList.forEach(order => {
+    if (order.items) {
+      try {
+        const items = typeof order.items === 'string' ? JSON.parse(order.items) : order.items;
+        if (Array.isArray(items)) {
+          items.forEach((item: any) => {
+            const id = item.id || item.productId;
+            if (id) {
+              const qty = Number(item.quantity) || 0;
+              const price = Number(item.price) || 0;
+              if (!productSalesMap[id]) {
+                productSalesMap[id] = { quantity: 0, totalSales: 0 };
+              }
+              productSalesMap[id].quantity += qty;
+              productSalesMap[id].totalSales += qty * price;
+            }
+          });
+        }
+      } catch (err) {
+        console.error("Error parsing order items for topProducts stats:", err);
+      }
+    }
+  });
+
+  const sortedProductIds = Object.keys(productSalesMap).sort(
+    (a, b) => (productSalesMap[b]?.quantity || 0) - (productSalesMap[a]?.quantity || 0)
+  );
+
+  const top3ProductIds = sortedProductIds.slice(0, 3);
+  let topProductsList: any[] = [];
+  if (top3ProductIds.length > 0) {
+    const productsFromDb = await prisma.product.findMany({
+      where: { id: { in: top3ProductIds } }
+    });
+    topProductsList = productsFromDb.map(p => ({
+      id: p.id,
+      name: p.name,
+      price: p.price,
+      category: p.category,
+      inventoryCount: p.inventoryCount,
+      image: p.image,
+      salesCount: productSalesMap[p.id]?.quantity || 0
+    })).sort((a, b) => b.salesCount - a.salesCount);
+  }
+
+  // Backfill with published products if less than 3 top products
+  if (topProductsList.length < 3) {
+    const existingIds = topProductsList.map(p => p.id);
+    const backupProducts = await prisma.product.findMany({
+      where: {
+        status: "Published",
+        id: { notIn: existingIds }
+      },
+      take: 3 - topProductsList.length
+    });
+    const backfilled = backupProducts.map(p => ({
+      id: p.id,
+      name: p.name,
+      price: p.price,
+      category: p.category,
+      inventoryCount: p.inventoryCount,
+      image: p.image,
+      salesCount: 0
+    }));
+    topProductsList = [...topProductsList, ...backfilled];
+  }
+
+  // Generate chartData mapping
+  const getChartDataMap = () => {
+    // 1. Today
+    const todayLabels: string[] = [];
+    const todayMap: Record<string, { Revenue: number; Orders: number }> = {};
+    for (let i = 11; i >= 0; i--) {
+      const hour = new Date();
+      hour.setHours(hour.getHours() - i * 2);
+      const hourString = hour.toLocaleTimeString("en-US", { hour: "numeric", hour12: true });
+      todayLabels.push(hourString);
+      todayMap[hourString] = { Revenue: 0, Orders: 0 };
+    }
+    
+    allOrdersList.forEach(ord => {
+      const d = new Date(ord.createdAt);
+      if (d.toDateString() === now.toDateString()) {
+        const hour = d.getHours();
+        const bracket = Math.floor(hour / 2) * 2;
+        const bracketDate = new Date();
+        bracketDate.setHours(bracket, 0, 0, 0);
+        const keyString = bracketDate.toLocaleTimeString("en-US", { hour: "numeric", hour12: true });
+        if (todayMap[keyString]) {
+          todayMap[keyString].Revenue += ord.total;
+          todayMap[keyString].Orders += 1;
+        }
+      }
+    });
+
+    const todayList = todayLabels.map(name => ({
+      name,
+      Revenue: todayMap[name]?.Revenue || 0,
+      Orders: todayMap[name]?.Orders || 0
+    }));
+
+    // 2. 7d
+    const sevenDaysLabels: string[] = [];
+    const sevenDaysMap: Record<string, { Revenue: number; Orders: number }> = {};
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date();
+      d.setDate(d.getDate() - i);
+      const dateString = d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+      sevenDaysLabels.push(dateString);
+      sevenDaysMap[dateString] = { Revenue: 0, Orders: 0 };
+    }
+    
+    allOrdersList.forEach(ord => {
+      const d = new Date(ord.createdAt);
+      const dateString = d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+      if (sevenDaysMap[dateString]) {
+        sevenDaysMap[dateString].Revenue += ord.total;
+        sevenDaysMap[dateString].Orders += 1;
+      }
+    });
+
+    const sevenDaysList = sevenDaysLabels.map(name => ({
+      name,
+      Revenue: sevenDaysMap[name]?.Revenue || 0,
+      Orders: sevenDaysMap[name]?.Orders || 0
+    }));
+
+    // 3. 30d
+    const thirtyDaysLabels: string[] = [];
+    const thirtyDaysMap: Record<string, { Revenue: number; Orders: number }> = {};
+    for (let i = 29; i >= 0; i--) {
+      const d = new Date();
+      d.setDate(d.getDate() - i);
+      const dateString = d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+      thirtyDaysLabels.push(dateString);
+      thirtyDaysMap[dateString] = { Revenue: 0, Orders: 0 };
+    }
+    
+    allOrdersList.forEach(ord => {
+      const d = new Date(ord.createdAt);
+      const dateString = d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+      if (thirtyDaysMap[dateString]) {
+        thirtyDaysMap[dateString].Revenue += ord.total;
+        thirtyDaysMap[dateString].Orders += 1;
+      }
+    });
+
+    const thirtyDaysList = thirtyDaysLabels.map(name => ({
+      name,
+      Revenue: thirtyDaysMap[name]?.Revenue || 0,
+      Orders: thirtyDaysMap[name]?.Orders || 0
+    }));
+
+    return {
+      "Today": todayList,
+      "7d": sevenDaysList,
+      "30d": thirtyDaysList
+    };
+  };
+
+  res.status(200).json({
+    success: true,
+    data: {
+      timeframeStats: {
+        "Today": todayStats,
+        "7d": sevenDaysStats,
+        "30d": thirtyDaysStats
+      },
+      dailyAverage,
+      recentOrders,
+      topProducts: topProductsList,
+      chartData: getChartDataMap()
+    }
+  });
+});
+
 export const OrderController = {
   createOrder,
   getAllOrders,
   updateOrder,
   deleteOrder,
   downloadInvoice,
+  getDashboardStats,
 };
